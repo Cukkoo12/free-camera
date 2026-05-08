@@ -1,0 +1,34 @@
+{
+    "schemaVersion": 1,
+    "id": "free-camera",
+    "version": "${version}",
+    "name": "Free Camera",
+    "description": "Free camera rotation in 3rd person mode. Mouse rotates the camera independently from the player.",
+    "authors": ["Cukkoo"],
+    "contact": {
+        "sources": "https://github.com/Cukkoo12/free-camera"
+    },
+    "license": "MIT",
+    "icon": "assets/free-camera/icon.png",
+    "environment": "client",
+    "entrypoints": {
+        "client": [
+            "com.cukkoo.freecamera.FreeCamera"
+        ]
+    },
+    "mixins": [
+        {
+            "config": "free-camera.mixins.json",
+            "environment": "client"
+        }
+    ],
+    "depends": {
+        "fabricloader": ">=0.18.5",
+        "minecraft": ">=26.1.0",
+        "java": ">=25",
+        "fabric-api": ">=0.145.4"
+    },
+    "custom": {
+        "loom:java_version": 25
+    }
+}
