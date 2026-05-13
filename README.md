@@ -1,30 +1,41 @@
 # Free Camera
 
-A Minecraft Fabric mod that gives you full control over the third-person camera.
+A Minecraft Fabric mod that gives you full, cinematic control over the third-person camera.
 
-![Free Camera Gameplay](assets/gameplay.png)
+![Free Camera Showcase](assets/showcase.gif)
+
+![Free Camera Screenshot](assets/screenshot.png)
 
 ## Features
 
-- **Free camera rotation** — In third-person mode, move your mouse to rotate the camera independently from your character
-- **Adjustable camera distance** — Scroll to zoom in or out (range: 1.0 – 20.0, default: 4.0)
-- **Independent movement** — Your character moves and turns normally while the camera stays where you left it
+- **Free Camera Rotation** — In third-person front mode (F5), move your mouse to rotate the camera independently from your character.
+- **Cinematic Smoothness** — Camera rotation and movement smoothly interpolate, giving a cinematic feel.
+- **Adjustable Distance & FOV Zoom** — Scroll to zoom in or out. The FOV dynamically adjusts with distance for a natural zooming effect.
+- **Camera Detach (Lock)** — Press **F7** to detach and lock the camera in its current position while your character moves freely.
+- **Camera Roll** — Press **Z / C** to tilt (roll) the camera on the Z axis.
+- **Reset Camera** — Press **R** to reset your camera's angle, roll, and distance back to default.
+- **Quick Toggle** — Press **F6** to toggle the Free Camera mod on or off.
 
 ## Usage
 
-1. Press **F5** to enter third-person mode
-2. Move your mouse to rotate the camera freely
-3. Scroll to adjust the camera distance
-4. Your character moves independently — the camera won't follow their rotation
+1. Press **F5** to enter the **Third-Person Front** perspective (the mod only activates in this mode).
+2. Move your mouse to rotate the camera.
+3. Scroll to adjust distance and FOV.
+4. Press **F7** to leave the camera behind and walk away.
+5. Use **Z/C** for cinematic rolls, and **R** to reset.
+6. Press **F6** if you want to temporarily disable the mod's overrides.
 
 ## Config
 
-On first use, a config file is created at `/config/free-camera.json`:
+Settings are saved in `config/free-camera.json`:
 
 ```json
 {
   "cameraDistance": 4.0,
-  "rotationSensitivity": 1.0
+  "rotationSensitivity": 1.0,
+  "smoothness": 0.0,
+  "fovZoom": 1.0,
+  "cameraRoll": 0.0
 }
 ```
 

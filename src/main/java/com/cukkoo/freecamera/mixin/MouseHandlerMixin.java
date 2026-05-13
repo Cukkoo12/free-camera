@@ -22,7 +22,7 @@ public class MouseHandlerMixin {
     @Inject(method = "turnPlayer(D)V", at = @At("HEAD"), cancellable = true)
     private void onTurnPlayer(double sensitivity, CallbackInfo ci) {
         Minecraft client = Minecraft.getInstance();
-        if (client.player == null || client.options.getCameraType().isFirstPerson()) {
+        if (!FreeCamera.isActive() || client.player == null || client.options.getCameraType().isFirstPerson()) {
             return;
         }
 
@@ -42,7 +42,7 @@ public class MouseHandlerMixin {
     @Inject(method = "onScroll(JDD)V", at = @At("HEAD"), cancellable = true)
     private void onScroll(long window, double horizontal, double vertical, CallbackInfo ci) {
         Minecraft client = Minecraft.getInstance();
-        if (client.player == null || client.screen != null
+        if (!FreeCamera.isActive() || client.player == null || client.screen != null
                 || client.options.getCameraType().isFirstPerson()) {
             return;
         }

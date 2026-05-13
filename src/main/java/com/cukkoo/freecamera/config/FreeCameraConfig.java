@@ -13,6 +13,9 @@ public class FreeCameraConfig {
 
     public double cameraDistance = 4.0;
     public double rotationSensitivity = 1.0;
+    public double smoothness = 0.0;
+    public double fovZoom = 1.0;
+    public double cameraRoll = 0.0;
 
     public transient float cameraYaw;
     public transient float cameraPitch;
