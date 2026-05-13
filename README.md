@@ -2,9 +2,9 @@
 
 A Minecraft Fabric mod that gives you full, cinematic control over the third-person camera.
 
-![Free Camera Showcase](assets/showcase.gif)
+![Free Camera Showcase](https://raw.githubusercontent.com/Cukkoo12/free-camera/master/assets/showcase.gif)
 
-![Free Camera Screenshot](assets/screenshot.png)
+![Free Camera Screenshot](https://raw.githubusercontent.com/Cukkoo12/free-camera/master/assets/screenshot.png)
 
 ## Features
 
