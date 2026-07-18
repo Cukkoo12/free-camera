@@ -1,0 +1,17 @@
+{
+  "required": true,
+  "package": "com.cukkoo.freecamera.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "KeyboardInputMixin",
+    "MouseMixin",
+    "FullbrightMixin",
+    "CameraMixin",
+    "GameRendererMixin",
+    "HandMixin",
+    "HudMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

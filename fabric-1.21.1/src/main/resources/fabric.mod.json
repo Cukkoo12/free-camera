@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "id": "freecamera",
+  "version": "${version}",
+  "name": "Free Camera",
+  "description": "Take full control of your camera: freecam, orbit, tripod lock, cinematic mode, roll, zoom, and more.",
+  "authors": ["Cukkoo"],
+  "contact": {
+    "sources": "https://github.com/Cukkoo12/freecamera"
+  },
+  "license": "MIT",
+  "icon": "assets/freecamera/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["com.cukkoo.freecamera.FreeCameraClient"]
+  },
+  "mixins": ["freecamera.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.16.9",
+    "fabric-api": ">=0.115.0",
+    "minecraft": "~1.21.1"
+  },
+  "suggests": {
+    "modmenu": ">=10.0.0"
+  }
+}

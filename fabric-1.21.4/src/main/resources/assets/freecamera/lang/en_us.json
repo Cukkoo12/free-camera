@@ -1,0 +1,12 @@
+{
+  "category.freecamera": "Free Camera",
+  "key.freecamera.toggle": "Toggle Free Camera",
+  "key.freecamera.reset": "Reset Camera",
+  "key.freecamera.tripod": "Tripod Mode",
+  "key.freecamera.cinematic": "Cinematic Mode",
+  "key.freecamera.settings": "Open Settings",
+  "key.freecamera.roll_left": "Roll Left",
+  "key.freecamera.roll_right": "Roll Right",
+  "screen.freecamera.settings": "Free Camera Settings",
+  "screen.freecamera.reset_defaults": "Reset to Defaults"
+}

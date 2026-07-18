@@ -1,34 +1,35 @@
-# Gradle
-.gradle/
-build/
-!gradle/wrapper/gradle-wrapper.jar
-!gradle/wrapper/gradle-wrapper.properties
+# Gradle outputs and caches
+**/.gradle/
+**/build/
 
-# IDE
-.idea/
+# Minecraft development/runtime data
+**/run/
+**/logs/
+**/crash-reports/
+/*/config/
+/*/recordings/
+/*/paths/
+*.log
+
+# Generated binaries (keep Gradle wrappers)
+*.class
+*.jar
+!**/gradle/wrapper/gradle-wrapper.jar
+
+# IDE and machine-specific files
+**/.idea/
+**/.vscode/
+**/bin/
 *.iml
 *.ipr
 *.iws
 .classpath
 .project
 .settings/
-.vscode/
-bin/
 
-# Minecraft
-run/
-logs/
-*.log
-crash-reports/
-
-# OS
+# Operating-system/editor files
 .DS_Store
 Thumbs.db
 *.swp
 *.swo
 *~
-
-# Java
-*.class
-*.jar
-!gradle/wrapper/gradle-wrapper.jar

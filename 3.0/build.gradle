@@ -1,0 +1,707 @@
+plugins {
+    id 'net.fabricmc.fabric-loom' version '1.15-SNAPSHOT'
+    id 'maven-publish'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    mavenCentral()
+    maven { url = 'https://maven.terraformersmc.com/releases/' }
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+    testImplementation "org.ow2.asm:asm-tree:9.9.1"
+    compileOnly "com.terraformersmc:modmenu:18.0.0"
+}
+
+processResources {
+    inputs.property "version", project.version
+    filteringCharset = "UTF-8"
+    filesMatching("fabric.mod.json") {
+        expand "version": project.version
+    }
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
+    withSourcesJar()
+}
+
+jar {
+    from("LICENSE") {
+        rename { "${it}_${project.archives_base_name}" }
+    }
+}
+
+tasks.register('verifyPhase1Safety') {
+    group = 'verification'
+    description = 'Rejects forbidden player-physics, movement, and networking writes in Phase 1.'
+    doLast {
+        def sourceRoot = file('src/main/java')
+        def forbidden = [
+                'noPhysics',
+                '.setPos(',
+                '.setPosRaw(',
+                '.moveTo(',
+                '.absMoveTo(',
+                '.teleportTo(',
+                '.setDeltaMovement(',
+                '.setYRot(',
+                '.setXRot(',
+                'player.input',
+                'KeyMapping.set(',
+                '.setDown(',
+                'KeyMapping.releaseAll(',
+                'network.protocol',
+                'Connection.send(',
+                'getConnection().send(',
+                'Serverbound',
+                'Clientbound'
+        ]
+        fileTree(sourceRoot).matching { include '**/*.java' }.each { sourceFile ->
+            def text = sourceFile.getText('UTF-8')
+            forbidden.each { token ->
+                if (text.contains(token)) {
+                    throw new GradleException("Forbidden Phase 1 player/network operation '${token}' in ${sourceFile}")
+                }
+            }
+        }
+
+        def mixinRoot = file('src/main/java/com/cukkoo/freecamera/mixin')
+        def forbiddenRenderTransitions = [
+                '.activate(',
+                '.cycleMode(',
+                '.requestMode(',
+                '.toggleCinematicMotion(',
+                '.setMode(',
+                'new CameraSession(',
+                'new CameraPose(',
+                'ClientIdentitySnapshot.capture('
+        ]
+        fileTree(mixinRoot).matching { include '**/*.java' }.each { mixinFile ->
+            def text = mixinFile.getText('UTF-8')
+            forbiddenRenderTransitions.each { token ->
+                if (text.contains(token)) {
+                    throw new GradleException("Rendering-side session creation '${token}' in ${mixinFile}")
+                }
+            }
+            if (text.contains('OrbitCameraState')
+                    || text.contains('CinematicMotionProfile')
+                    || text.contains('CinematicPositionSmoother')
+                    || text.contains('CinematicRotationSmoother')
+                    || text.contains('CameraRollSmoother')
+                    || text.contains('CameraZoomSmoother')
+                    || text.contains('rotateLocalZ(')
+                    || text.contains('.m00(')
+                    || text.contains('Math.sin(')
+                    || text.contains('Math.cos(')
+                    || text.contains('Math.atan2(')
+                    || text.contains('Math.asin(')) {
+                throw new GradleException("Orbit calculations must remain outside Mixins: ${mixinFile}")
+            }
+        }
+
+        def bobbingMixin = file('src/main/java/com/cukkoo/freecamera/mixin/ViewBobbingMixin.java')
+        def bobbingText = bobbingMixin.getText('UTF-8')
+        if (!bobbingText.contains('!stateMachine.isActive()') || bobbingText.contains('bobHurt')) {
+            throw new GradleException('View bobbing suppression must be active-session-only and must not intercept hurt shake')
+        }
+
+        def handMixinFile = file('src/main/java/com/cukkoo/freecamera/mixin/HandRenderingMixin.java')
+        def handMixin = handMixinFile.getText('UTF-8')
+        if (!handMixin.contains('method = "renderItemInHand"')
+                || !handMixin.contains('!stateMachine.isActive()')
+                || !handMixin.contains('ci.cancel()')
+                || handMixin.contains('method = "render"')
+                || handMixin.contains('method = "renderLevel"')) {
+            throw new GradleException('Hand rendering must be cancelled only at renderItemInHand for active sessions')
+        }
+
+        def mixinConfig = file('src/main/resources/free-camera.mixins.json').getText('UTF-8')
+        if (!mixinConfig.contains('"HandRenderingMixin"')) {
+            throw new GradleException('HandRenderingMixin is not registered')
+        }
+
+        def lifecycle = file('src/main/java/com/cukkoo/freecamera/lifecycle/CameraLifecycleManager.java')
+                .getText('UTF-8')
+        def keyMappings = file('src/main/java/com/cukkoo/freecamera/input/CameraKeyMappings.java')
+                .getText('UTF-8')
+        if (!lifecycle.contains('if (client.screen != null)')
+                || !lifecycle.contains('keyMappings.clearQueuedTransitions()')
+                || !keyMappings.contains('clearQueuedTransitions()')
+                || !keyMappings.contains('drainDirectModeKeys()')
+                || !keyMappings.contains('primaryKeyController.drainAndBlockUntilRelease(cameraControl)')) {
+            throw new GradleException('Screen-open camera-mode queues must be drained without transitions')
+        }
+        if (!keyMappings.contains('KeyMappingHelper.registerKeyMapping')
+                || keyMappings.contains('glfwGetKey(')) {
+            throw new GradleException('Camera mode controls must use Fabric key mappings, not GLFW polling')
+        }
+
+        def primaryKeyController = file(
+                'src/main/java/com/cukkoo/freecamera/radial/CameraPrimaryKeyController.java'
+        ).getText('UTF-8')
+        def radialState = file(
+                'src/main/java/com/cukkoo/freecamera/radial/CameraRadialMenuState.java'
+        ).getText('UTF-8')
+        def radialController = file(
+                'src/main/java/com/cukkoo/freecamera/radial/CameraRadialMenuController.java'
+        ).getText('UTF-8')
+        def radialRenderer = file(
+                'src/main/java/com/cukkoo/freecamera/radial/CameraRadialMenuRenderer.java'
+        ).getText('UTF-8')
+        if (!primaryKeyController.contains('HOLD_THRESHOLD_NANOS = 300_000_000L')
+                || !primaryKeyController.contains('System.nanoTime()')
+                || !primaryKeyController.contains('lastUsedMode = CameraMode.FREE_CAMERA')
+                || !primaryKeyController.contains('KEEP_CURRENT')
+                || !radialState.contains('DEAD_ZONE_RADIUS')
+                || !radialController.contains('accumulateMouse(')
+                || !radialRenderer.contains('HudElementRegistry.addLast(')
+                || radialRenderer.contains('new ArrayList(')
+                || radialRenderer.contains('new Component(')) {
+            throw new GradleException('Phase 5A radial timing, geometry, caching, or rendering is incomplete')
+        }
+        if (!keyMappings.contains('"key.free-camera.camera_control"')
+                || !keyMappings.contains('GLFW.GLFW_KEY_F6')
+                || keyMappings.contains('GLFW.GLFW_KEY_F7')
+                || keyMappings.contains('GLFW.GLFW_KEY_F8')
+                || keyMappings.count('GLFW.GLFW_KEY_UNKNOWN') != 5) {
+            throw new GradleException('F6 must be primary and all three direct mode shortcuts must be unbound')
+        }
+        def radialGameplayMixin = file(
+                'src/main/java/com/cukkoo/freecamera/mixin/RadialGameplayInputMixin.java'
+        ).getText('UTF-8')
+        def radialKeyboardMixin = file(
+                'src/main/java/com/cukkoo/freecamera/mixin/KeyboardRadialMenuMixin.java'
+        ).getText('UTF-8')
+        def mouseMixin = file('src/main/java/com/cukkoo/freecamera/mixin/MouseHandlerMixin.java')
+                .getText('UTF-8')
+        if (!mouseMixin.contains('FreeCameraClient.accumulateRadialMouse(')
+                || !mouseMixin.contains('method = "onButton"')
+                || !mouseMixin.contains('FreeCameraClient.cancelRadialMenu()')
+                || !radialKeyboardMixin.contains('GLFW.GLFW_KEY_ESCAPE')
+                || !radialKeyboardMixin.contains('FreeCameraClient.cancelRadialMenu()')
+                || !radialGameplayMixin.contains('method = "handleKeybinds"')
+                || !radialGameplayMixin.contains('method = "continueAttack"')
+                || !radialGameplayMixin.contains('method = "startAttack"')
+                || !radialGameplayMixin.contains('method = "startUseItem"')) {
+            throw new GradleException('Radial menu gameplay, mouse, or cancel input suppression is incomplete')
+        }
+        if (!primaryKeyController.contains('stateMachine.isActive()')
+                || !primaryKeyController.contains('CleanupCause.USER_TOGGLE')
+                || !primaryKeyController.contains('resolveSelectionAction(')
+                || !primaryKeyController.contains('beginInputQuarantine()')
+                || !lifecycle.contains('keyMappings.forceClearRadial()')) {
+            throw new GradleException('Primary-key transitions, queued-input quarantine, or lifecycle cleanup is incomplete')
+        }
+
+        def keyboardMixin = file('src/main/java/com/cukkoo/freecamera/mixin/KeyboardInputMixin.java')
+                .getText('UTF-8')
+        if (!keyboardMixin.contains('PlayerInputSuppressor')
+                || keyboardMixin.contains('Math.sin(')
+                || keyboardMixin.contains('Math.cos(')
+                || keyboardMixin.contains('blocksPerSecond')) {
+            throw new GradleException('KeyboardInputMixin may only bridge input to PlayerInputSuppressor')
+        }
+
+        def suppressor = file('src/main/java/com/cukkoo/freecamera/input/PlayerInputSuppressor.java')
+                .getText('UTF-8')
+        if (!suppressor.contains('!stateMachine.shouldSuppressPlayerMovementInput()')
+                || !suppressor.contains('client.screen != null')) {
+            throw new GradleException('Player input suppression must leave inactive, Tripod, and screen-open gameplay untouched')
+        }
+
+        if (!mouseMixin.contains('!stateMachine.shouldInterceptCameraMouseInput()')) {
+            throw new GradleException('Mouse interception must leave inactive and Tripod control vanilla')
+        }
+
+        def motion = file('src/main/java/com/cukkoo/freecamera/motion/CameraMotionIntegrator.java')
+                .getText('UTF-8')
+        if (!motion.contains('CinematicPositionSmoother')
+                || !motion.contains('MAX_SUBSTEP_SECONDS')
+                || !motion.contains('MAX_ACCEPTED_ELAPSED_SECONDS')
+                || !motion.contains('MAX_SUBSTEP_COUNT')
+                || !motion.contains('Double.isFinite(')) {
+            throw new GradleException('Camera motion must retain bounded, finite, substepped integration')
+        }
+
+        def orbitMotion = file('src/main/java/com/cukkoo/freecamera/orbit/OrbitMotionIntegrator.java')
+                .getText('UTF-8')
+        if (!orbitMotion.contains('Math.exp(')
+                || !orbitMotion.contains('CinematicMotionProfile')
+                || !orbitMotion.contains('MAX_SUBSTEP_SECONDS')
+                || !orbitMotion.contains('MAX_ACCEPTED_ELAPSED_SECONDS')
+                || !orbitMotion.contains('MAX_SUBSTEP_COUNT')
+                || !orbitMotion.contains('Double.isFinite(')) {
+            throw new GradleException('Orbit motion must use bounded, finite, substepped integration')
+        }
+
+        def cinematicFiles = [
+                'CinematicMotionState.java',
+                'CinematicMotionProfile.java',
+                'CinematicPositionSmoother.java',
+                'CinematicRotationSmoother.java'
+        ]
+        cinematicFiles.each { name ->
+            if (!file("src/main/java/com/cukkoo/freecamera/cinematic/${name}").isFile()) {
+                throw new GradleException("Missing dedicated Cinematic system: ${name}")
+            }
+        }
+        def cinematicPosition = file(
+                'src/main/java/com/cukkoo/freecamera/cinematic/CinematicPositionSmoother.java'
+        ).getText('UTF-8')
+        def cinematicRotation = file(
+                'src/main/java/com/cukkoo/freecamera/cinematic/CinematicRotationSmoother.java'
+        ).getText('UTF-8')
+        if (!cinematicPosition.contains('Math.exp(')
+                || !cinematicRotation.contains('Math.exp(')
+                || !cinematicRotation.contains('Mth.wrapDegrees(')
+                || cinematicPosition.contains('new Vec3(')
+                || cinematicRotation.contains('new Vec3(')
+                || cinematicPosition.contains('new ArrayList(')
+                || cinematicRotation.contains('new ArrayList(')) {
+            throw new GradleException('Cinematic math must remain time-based and allocation-light')
+        }
+
+        def cinematicKeys = file(
+                'src/main/java/com/cukkoo/freecamera/input/CameraKeyMappings.java'
+        ).getText('UTF-8')
+        if (!cinematicKeys.contains('GLFW.GLFW_KEY_F9')
+                || !cinematicKeys.contains('toggleCinematicMotion')
+                || !cinematicKeys.contains('drainWithoutTransition(toggleCinematicMotion)')) {
+            throw new GradleException('F9 Cinematic input must be mapped and safely drained')
+        }
+
+        def renderBridgeSafety = file(
+                'src/main/java/com/cukkoo/freecamera/render/CameraRenderBridge.java'
+        ).getText('UTF-8')
+        if (renderBridgeSafety.contains('.toggle(')
+                || renderBridgeSafety.contains('toggleCinematicMotion(')) {
+            throw new GradleException('Rendering must not toggle Cinematic state')
+        }
+
+        def effectFiles = [
+                'src/main/java/com/cukkoo/freecamera/roll/CameraRollState.java',
+                'src/main/java/com/cukkoo/freecamera/roll/CameraRollController.java',
+                'src/main/java/com/cukkoo/freecamera/roll/CameraRollSmoother.java',
+                'src/main/java/com/cukkoo/freecamera/roll/CameraOrientationBridge.java',
+                'src/main/java/com/cukkoo/freecamera/render/CanonicalWorldView.java',
+                'src/main/java/com/cukkoo/freecamera/zoom/CameraZoomState.java',
+                'src/main/java/com/cukkoo/freecamera/zoom/CameraZoomController.java',
+                'src/main/java/com/cukkoo/freecamera/zoom/CameraZoomSmoother.java',
+                'src/main/java/com/cukkoo/freecamera/zoom/CameraProjectionBridge.java'
+        ]
+        effectFiles.each { path ->
+            if (!file(path).isFile()) {
+                throw new GradleException("Missing roll/zoom system: ${path}")
+            }
+        }
+        def effectsMixin = file(
+                'src/main/java/com/cukkoo/freecamera/mixin/CameraRenderEffectsMixin.java'
+        ).getText('UTF-8')
+        if (!effectsMixin.contains('method = "extractRenderState"')
+                || !effectsMixin.contains('@At("RETURN")')
+                || !effectsMixin.contains('bridge.applyProjection(cameraState)')
+                || !effectsMixin.contains('method = "update"')
+                || !effectsMixin.contains('bridge.prepareFrame(')
+                || effectsMixin.contains('rotateZ(')
+                || effectsMixin.contains('.m00(')) {
+            throw new GradleException('Camera effects Mixin must prepare one frame and bridge zoom projection')
+        }
+        def worldRenderViewMixin = file(
+                'src/main/java/com/cukkoo/freecamera/mixin/WorldRenderViewMixin.java'
+        ).getText('UTF-8')
+        def chunkRenderViewMixin = file(
+                'src/main/java/com/cukkoo/freecamera/mixin/ChunkRenderViewMixin.java'
+        ).getText('UTF-8')
+        if (!worldRenderViewMixin.contains('@Mixin(GameRenderer.class)')
+                || !worldRenderViewMixin.contains('@ModifyArg(')
+                || !worldRenderViewMixin.contains('LevelRenderer;renderLevel(')
+                || !worldRenderViewMixin.contains('index = 4')
+                || !worldRenderViewMixin.contains('bridge.selectCanonicalWorldView(vanillaView)')
+                || worldRenderViewMixin.contains('ci.cancel()')
+                || worldRenderViewMixin.contains('rotateZ(')) {
+            throw new GradleException('World passes must receive the canonical view at the exact LevelRenderer argument')
+        }
+        if (!chunkRenderViewMixin.contains('@Mixin(LevelRenderer.class)')
+                || !chunkRenderViewMixin.contains('@ModifyArg(')
+                || !chunkRenderViewMixin.contains('method = "extractLevel"')
+                || !chunkRenderViewMixin.contains('prepareChunkRenders(Lorg/joml/Matrix4fc;)')
+                || !chunkRenderViewMixin.contains('index = 0')
+                || !chunkRenderViewMixin.contains('bridge.selectCanonicalWorldView(vanillaView)')
+                || chunkRenderViewMixin.contains('rotateZ(')) {
+            throw new GradleException('Chunk UBO snapshots must receive the canonical view at prepareChunkRenders')
+        }
+        if (!mixinConfig.contains('"FrustumAccessor"')
+                || !mixinConfig.contains('"CameraProjectionAccessor"')
+                || !mixinConfig.contains('"ChunkRenderViewMixin"')
+                || !mixinConfig.contains('"WorldRenderViewMixin"')
+                || mixinConfig.contains('"WorldViewRollMixin"')) {
+            throw new GradleException('Canonical world-view Mixins/accessors are not registered cleanly')
+        }
+        def orientationBridge = file(
+                'src/main/java/com/cukkoo/freecamera/roll/CameraOrientationBridge.java'
+        ).getText('UTF-8')
+        def renderEffectsBridge = file(
+                'src/main/java/com/cukkoo/freecamera/render/CameraRenderEffectsBridge.java'
+        ).getText('UTF-8')
+        def canonicalWorldView = file(
+                'src/main/java/com/cukkoo/freecamera/render/CanonicalWorldView.java'
+        ).getText('UTF-8')
+        def projectionBridge = file(
+                'src/main/java/com/cukkoo/freecamera/zoom/CameraProjectionBridge.java'
+        ).getText('UTF-8')
+        def rollState = file(
+                'src/main/java/com/cukkoo/freecamera/roll/CameraRollState.java'
+        ).getText('UTF-8')
+        def rollController = file(
+                'src/main/java/com/cukkoo/freecamera/roll/CameraRollController.java'
+        ).getText('UTF-8')
+        def cameraKeyMappings = file(
+                'src/main/java/com/cukkoo/freecamera/input/CameraKeyMappings.java'
+        ).getText('UTF-8')
+        def englishTranslations = file(
+                'src/main/resources/assets/free-camera/lang/en_us.json'
+        ).getText('UTF-8')
+        if (!orientationBridge.contains('worldView.rotateLocalZ(')
+                || orientationBridge.contains('orientation.rotate')
+                || !orientationBridge.contains('updateFrustum(')
+                || !orientationBridge.contains('composeFinalViewProjection(')
+                || !projectionBridge.contains('projectionMatrix.m00(')
+                || !projectionBridge.contains('projectionMatrix.m11(')) {
+            throw new GradleException('Roll/zoom must affect only the shared world view and world projection')
+        }
+        if (!renderEffectsBridge.contains('canonicalWorldView.prepare(')
+                || !renderEffectsBridge.contains('cameraAccessor.freecamera$cullFrustum()')
+                || renderEffectsBridge.count('orientationBridge.updateFrustum(') != 1
+                || renderEffectsBridge.count('selectCanonicalWorldView(') != 1
+                || renderEffectsBridge.contains('hudProjection')) {
+            throw new GradleException('Canonical view preparation and final frustum rebuild are incomplete')
+        }
+        if (canonicalWorldView.count('new Matrix4f()') != 2
+                || canonicalWorldView.count('orientationBridge.applyWorldView(') != 1
+                || canonicalWorldView.count('projectionBridge.apply(') != 1
+                || !canonicalWorldView.contains('return ready ? view : vanillaView')) {
+            throw new GradleException('Canonical world view must reuse exactly one view and projection matrix')
+        }
+        if (rollState.contains('MINIMUM_ROLL')
+                || rollState.contains('MAXIMUM_ROLL')
+                || rollState.contains('Math.clamp(')
+                || rollState.contains('targetRoll')
+                || !rollState.contains('normalizeDegrees(')
+                || !rollController.contains('direction * rate')
+                || !rollController.contains('state.holdCurrent()')
+                || rollController.contains('resetRoll')
+                || rollController.contains('GLFW_KEY_UNKNOWN')
+                || englishTranslations.contains('key.free-camera.reset_roll')) {
+            throw new GradleException('Roll must remain unlimited, normalized, non-centering, and use no reset-only key')
+        }
+        if (!cameraKeyMappings.contains(
+                    'rollController.register(category, GLFW.GLFW_KEY_C, GLFW.GLFW_KEY_Z)')) {
+            throw new GradleException('Default roll controls must be C=left and Z=right')
+        }
+        if (!cameraKeyMappings.contains('rollController.resetToZeroIfNeeded()')
+                || !cameraKeyMappings.contains('stateMachine.resetToPlayer(client);')
+                || cameraKeyMappings.indexOf('rollController.resetToZeroIfNeeded()')
+                    > cameraKeyMappings.indexOf('stateMachine.resetToPlayer(client);')) {
+            throw new GradleException('R must perform roll-only reset before mode-specific reset')
+        }
+        def allMainSources = fileTree(sourceRoot).matching { include '**/*.java' }
+                .collect { it.getText('UTF-8') }.join('\n')
+        if (allMainSources.contains('options.fov().set(')
+                || allMainSources.contains('options.getFov().set(')
+                || allMainSources.contains('new Quaternionf(')) {
+            throw new GradleException('Roll/zoom must not mutate FOV options or allocate render matrices/quaternions')
+        }
+        def matrixAllocationSources = fileTree(sourceRoot).matching {
+            include '**/*.java'
+            exclude '**/CanonicalWorldView.java'
+        }.collect { it.getText('UTF-8') }.join('\n')
+        if (matrixAllocationSources.contains('new Matrix4f(')) {
+            throw new GradleException('Only the reusable canonical world-view holder may allocate render matrices')
+        }
+
+        def orbitFiles = [
+                'OrbitCameraState.java',
+                'OrbitCameraRig.java',
+                'OrbitMotionIntegrator.java'
+        ]
+        orbitFiles.each { name ->
+            if (!file("src/main/java/com/cukkoo/freecamera/orbit/${name}").isFile()) {
+                throw new GradleException("Missing dedicated Orbit system: ${name}")
+            }
+        }
+
+        def tripodFiles = [
+                'TripodCameraState.java',
+                'TripodCameraRig.java'
+        ]
+        tripodFiles.each { name ->
+            if (!file("src/main/java/com/cukkoo/freecamera/tripod/${name}").isFile()) {
+                throw new GradleException("Missing dedicated Tripod system: ${name}")
+            }
+        }
+
+        def tripodStateMachine = file('src/main/java/com/cukkoo/freecamera/state/CameraStateMachine.java')
+                .getText('UTF-8')
+        if (!tripodStateMachine.contains('tripodRig.clear()')
+                || !tripodStateMachine.contains('tripodRig.enterFromPose(session.pose())')) {
+            throw new GradleException('Tripod transitions and lifecycle cleanup are incomplete')
+        }
+
+        def crosshairMixinFile = file('src/main/java/com/cukkoo/freecamera/mixin/CrosshairRenderingMixin.java')
+        def crosshairMixin = crosshairMixinFile.getText('UTF-8')
+        if (!crosshairMixin.contains('method = "extractCrosshair"')
+                || !crosshairMixin.contains('!stateMachine.isActive()')
+                || !crosshairMixin.contains('ci.cancel()')
+                || crosshairMixin.contains('extractHotbar')
+                || crosshairMixin.contains('extractPlayerHealth')
+                || crosshairMixin.contains('extractChat')) {
+            throw new GradleException('Crosshair suppression must target only extractCrosshair for active sessions')
+        }
+        if (!mixinConfig.contains('"CrosshairRenderingMixin"')) {
+            throw new GradleException('CrosshairRenderingMixin is not registered')
+        }
+    }
+}
+
+tasks.register('verifyMotionConsistency', JavaExec) {
+    group = 'verification'
+    description = 'Runs deterministic Free Camera movement checks across supported frame rates.'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.cukkoo.freecamera.motion.CameraMotionIntegratorDevelopmentChecks'
+}
+
+tasks.register('verifyOrbitCamera', JavaExec) {
+    group = 'verification'
+    description = 'Runs deterministic Orbit Camera geometry, transition, and frame-rate checks.'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.cukkoo.freecamera.orbit.OrbitCameraDevelopmentChecks'
+}
+
+tasks.register('verifyCameraUx', JavaExec) {
+    group = 'verification'
+    description = 'Runs deterministic direct-mode camera UX transition checks.'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.cukkoo.freecamera.state.CameraUxDevelopmentChecks'
+}
+
+tasks.register('verifyTripodCamera', JavaExec) {
+    group = 'verification'
+    description = 'Runs deterministic Tripod Camera pose, suspension, and cleanup checks.'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.cukkoo.freecamera.tripod.TripodCameraDevelopmentChecks'
+}
+
+tasks.register('verifyCinematicMotion', JavaExec) {
+    group = 'verification'
+    description = 'Runs deterministic Cinematic position, rotation, transition, and suspension checks.'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.cukkoo.freecamera.cinematic.CinematicMotionDevelopmentChecks'
+}
+
+tasks.register('verifyCameraRollZoom', JavaExec) {
+    group = 'verification'
+    description = 'Runs deterministic rendered-roll and projection-zoom checks.'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.cukkoo.freecamera.render.CameraRollZoomDevelopmentChecks'
+}
+
+tasks.register('verifyMinecraft261RenderPipeline', JavaExec) {
+    group = 'verification'
+    description = 'Inspects Minecraft 26.1.2 bytecode for the targeted chunk and world matrix paths.'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.cukkoo.freecamera.render.Minecraft261RenderPipelineDevelopmentChecks'
+}
+
+tasks.register('verifyCameraRadialMenu', JavaExec) {
+    group = 'verification'
+    description = 'Runs deterministic F6 timing, radial geometry, transition, and cleanup checks.'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.cukkoo.freecamera.radial.CameraRadialMenuDevelopmentChecks'
+}
+
+tasks.register('verifyCameraCollision', JavaExec) {
+    group = 'verification'
+    description = 'Runs deterministic Free, Orbit, Tripod, recovery, and collision safety checks.'
+    dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.cukkoo.freecamera.collision.CameraCollisionDevelopmentChecks'
+    doFirst {
+        def collisionRoot = file('src/main/java/com/cukkoo/freecamera/collision')
+        def requiredFiles = [
+                'CameraCollisionMode.java',
+                'CameraCollisionState.java',
+                'CameraCollisionResolver.java',
+                'FreeCameraCollisionResolver.java',
+                'OrbitCameraCollisionResolver.java',
+                'CameraCollisionSmoother.java',
+                'MinecraftCameraCollisionQuery.java'
+        ]
+        requiredFiles.each { name ->
+            if (!new File(collisionRoot, name).isFile()) {
+                throw new GradleException("Missing collision system: ${name}")
+            }
+        }
+        def minecraftQuery = new File(collisionRoot, 'MinecraftCameraCollisionQuery.java')
+                .getText('UTF-8')
+        if (!minecraftQuery.contains('getChunkNow(')
+                || !minecraftQuery.contains('getBlockCollisions(null, sweep)')
+                || !minecraftQuery.contains('Shapes.collide(')
+                || !minecraftQuery.contains('ClipContext.Block.COLLIDER')
+                || !minecraftQuery.contains('ClipContext.Fluid.NONE')) {
+            throw new GradleException('Collision must use loaded chunks, block shapes, and fluid-free Orbit clips')
+        }
+        def renderBridge = file('src/main/java/com/cukkoo/freecamera/render/CameraRenderBridge.java')
+                .getText('UTF-8')
+        def cameraMixin = file('src/main/java/com/cukkoo/freecamera/mixin/CameraMixin.java')
+                .getText('UTF-8')
+        def session = file('src/main/java/com/cukkoo/freecamera/state/CameraSession.java')
+                .getText('UTF-8')
+        def invalidationMixin = file(
+                'src/main/java/com/cukkoo/freecamera/mixin/ClientLevelCollisionInvalidationMixin.java'
+        ).getText('UTF-8')
+        def mixinConfig = file('src/main/resources/free-camera.mixins.json').getText('UTF-8')
+        if (!renderBridge.contains('collisionResolver.resolve(')
+                || !renderBridge.contains('return session.renderedPose()')
+                || !session.contains('desiredPose')
+                || !session.contains('renderedPose')
+                || cameraMixin.contains('CameraCollision')
+                || !invalidationMixin.contains('method = "sendBlockUpdated"')
+                || !invalidationMixin.contains('markCollisionWorldDirty()')
+                || !mixinConfig.contains('"ClientLevelCollisionInvalidationMixin"')) {
+            throw new GradleException('Collision must resolve before the render camera and remain outside Mixins')
+        }
+        fileTree(collisionRoot).matching { include '**/*.java' }.each { sourceFile ->
+            def source = sourceFile.getText('UTF-8')
+            if (source.contains('LocalPlayer.noPhysics')
+                    || source.contains('.setDeltaMovement(')
+                    || source.contains('Connection.send(')
+                    || source.contains('Serverbound')
+                    || source.contains('Clientbound')) {
+                throw new GradleException("Collision touched player physics or networking: ${sourceFile}")
+            }
+        }
+    }
+}
+
+tasks.register('verifyFreeCameraConfig', JavaExec) {
+    group = 'verification'; dependsOn tasks.named('testClasses')
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.cukkoo.freecamera.config.FreeCameraConfigDevelopmentChecks'
+}
+
+tasks.register('verifyStudioSystems', JavaExec) {
+    group='verification'; dependsOn tasks.named('testClasses'); classpath=sourceSets.test.runtimeClasspath
+    mainClass='com.cukkoo.freecamera.recording.StudioDevelopmentChecks'
+    doFirst {
+        def follow=file('src/main/java/com/cukkoo/freecamera/follow/FollowTargetTracker.java').getText('UTF-8')
+        def radial=file('src/main/java/com/cukkoo/freecamera/radial/CameraRadialEntry.java').getText('UTF-8')
+        def hud=file('src/main/java/com/cukkoo/freecamera/hud/CameraStatusHud.java').getText('UTF-8')
+        def recording=file('src/main/java/com/cukkoo/freecamera/recording/CameraRecordingController.java').getText('UTF-8')
+        if(!radial.contains('FOLLOW(CameraMode.FOLLOW')||!follow.contains('getEntities((Entity) null, searchBounds')||!follow.contains('instanceof ItemEntity')||!follow.contains('instanceof Projectile'))throw new GradleException('Follow radial selection, bounded targeting, or filters are incomplete')
+        if(!hud.contains('if(!c.statusOverlay||debug)return')||hud.indexOf('if(!c.statusOverlay||debug)return')>hud.indexOf('rebuild()'))throw new GradleException('Disabled status HUD must return before formatting')
+        if(recording.contains('Files.write')||recording.contains('CameraRecordingStorage'))throw new GradleException('Recording hot path performs disk IO')
+    }
+}
+
+tasks.register('verifyStorageOperations', JavaExec) {
+    group='verification'; dependsOn tasks.named('testClasses'); classpath=sourceSets.test.runtimeClasspath
+    mainClass='com.cukkoo.freecamera.recording.StorageDevelopmentChecks'
+}
+
+tasks.register('verifyFollowCamera', JavaExec) {
+    group='verification'; dependsOn tasks.named('testClasses'); classpath=sourceSets.test.runtimeClasspath
+    mainClass='com.cukkoo.freecamera.follow.FollowDevelopmentChecks'
+    doFirst {
+        def rig=file('src/main/java/com/cukkoo/freecamera/follow/FollowCameraRig.java').getText('UTF-8')
+        def tracker=file('src/main/java/com/cukkoo/freecamera/follow/FollowTargetTracker.java').getText('UTF-8')
+        def profileMath=file('src/main/java/com/cukkoo/freecamera/follow/FollowProfileMath.java').getText('UTF-8')
+        ['FollowProfile.LOOK_AT','getGameTimeDeltaPartialTick(false)','getPosition(partialTick)','getBbHeight() * 0.5','TARGET_DISCONTINUITY_SQUARED','pose.translate(dx, dy, dz)','moveCameraRelative(','switchProfilePreservingPose'].each{if(!rig.contains(it))throw new GradleException("Follow refinement missing: ${it}")}
+        ['case CHASE','case SIDE','case FIXED_ANGLE','LOOK_AT has no target-relative bearing'].each{if(!profileMath.contains(it))throw new GradleException("Distinct Follow profile math missing: ${it}")}
+        ['instanceof Player','instanceof LivingEntity','instanceof AbstractBoat','instanceof AbstractMinecart','instanceof ArmorStand','entity.isVehicle()','Math.clamp(range,8,256)','getEntities((Entity) null, searchBounds'].each{if(!tracker.contains(it))throw new GradleException("Follow target/filter requirement missing: ${it}")}
+        def machine=file('src/main/java/com/cukkoo/freecamera/state/CameraStateMachine.java').getText('UTF-8')
+        if(!machine.contains('handleLostFollowTarget')||!machine.contains('CameraMode.FREE_CAMERA'))throw new GradleException('Follow target-loss pose-preserving fallback missing')
+    }
+}
+
+tasks.register('verifyRuntimeHotfixes', JavaExec) {
+    group='verification'; dependsOn tasks.named('testClasses'); classpath=sourceSets.test.runtimeClasspath
+    mainClass='com.cukkoo.freecamera.follow.RuntimeHotfixDevelopmentChecks'
+    doFirst {
+        def screen=file('src/main/java/com/cukkoo/freecamera/gui/CameraSettingsScreen.java').getText('UTF-8')
+        ['extractBackground(','SECTION_STARTS','controlLeft','controlWidth','visibleLabels','panelBottom-31','humanName(','narrowLayout'].each{if(!screen.contains(it))throw new GradleException("Polished settings layout missing: ${it}")}
+        def keys=file('src/main/java/com/cukkoo/freecamera/input/CameraKeyMappings.java').getText('UTF-8')
+        if(!keys.contains('if (!rollController.resetToZeroIfNeeded())')||!keys.contains('stateMachine.resetToPlayer(client);'))throw new GradleException('Two-stage reset decision is not wired')
+        def machine=file('src/main/java/com/cukkoo/freecamera/state/CameraStateMachine.java').getText('UTF-8')
+        if(!machine.contains('session.mode() == CameraMode.TRIPOD')||!machine.contains('tripodRig.enterFromPose(session.pose())'))throw new GradleException('Tripod second reset does not recapture the player pose')
+        def mixin=file('src/main/java/com/cukkoo/freecamera/mixin/CameraMixin.java').getText('UTF-8')
+        if(!mixin.contains('method = "calculateFov(F)F"')||!mixin.contains('DetachedCameraFov.select('))throw new GradleException('Detached dynamic FOV interception is missing')
+        def client=file('src/main/java/com/cukkoo/freecamera/FreeCameraClient.java').getText('UTF-8')
+        if(!client.contains('switchProfilePreservingPose(c.followProfile,active.renderedPose())'))throw new GradleException('Follow profile Apply/Done live wiring is missing')
+        def rig=file('src/main/java/com/cukkoo/freecamera/follow/FollowCameraRig.java').getText('UTF-8')
+        ['distanceDelta(','bearingDelta(','settleSemanticBearing','getPreciseBodyRotation(','state.profile() == FollowProfile.LOOK_AT'].each{if(!rig.contains(it))throw new GradleException("Follow runtime hotfix missing: ${it}")}
+    }
+}
+
+tasks.register('verifyCompletionRequirements') {
+    group='verification'
+    doLast {
+        def screen=file('src/main/java/com/cukkoo/freecamera/gui/CameraSettingsScreen.java').getText('UTF-8')
+        ['Preferred Camera Mode','Radial Hold (ms)','Custom Speed','Follow Profile','Current Target:','Hide Hand','Start Recording','Play Selected','New Path','Add Current Pose','Collision Safety Margin','Restore Advanced Defaults','Confirm Preset'].each { label ->
+            if(!screen.contains(label))throw new GradleException("Missing functional settings control: ${label}")
+        }
+        ['private boolean apply()','private void cancel()','resetTab()','mouseScrolled(','setTooltip(','EditBox','CONFIRM DELETE','listMetadata(','loadAndPlayRecording','replaceKeyframe','moveKeyframe'].each { token ->
+            if(!screen.contains(token))throw new GradleException("Incomplete settings workflow: ${token}")
+        }
+        def production=fileTree('src/main/java').matching{include '**/*.java'}.collect{it.getText('UTF-8')}.join('\n').toLowerCase()
+        ['todo','fixme','not implemented','unsupportedoperationexception','placeholder'].each{if(production.contains(it))throw new GradleException("Incomplete production marker remains: ${it}")}
+        def metadata=file('src/main/resources/fabric.mod.json').getText('UTF-8')
+        if(metadata.contains('"modmenu"') && metadata.contains('"depends"') && metadata.substring(metadata.indexOf('"depends"')).contains('modmenu'))throw new GradleException('Mod Menu became required')
+        def buildScript=file('build.gradle').getText('UTF-8'),integration=file('src/main/java/com/cukkoo/freecamera/integration/FreeCameraModMenuIntegration.java').getText('UTF-8'),keys=file('src/main/java/com/cukkoo/freecamera/input/CameraKeyMappings.java').getText('UTF-8')
+        if(!buildScript.contains('compileOnly "com.terraformersmc:modmenu:18.0.0"')||!integration.contains('FreeCameraClient.createSettingsScreen(parent)')||!keys.contains('GLFW.GLFW_KEY_F10')||!keys.contains('FreeCameraClient.openSettingsScreen()'))throw new GradleException('Optional Mod Menu or F10 shared-screen integration is incomplete')
+        def render=file('src/main/java/com/cukkoo/freecamera/render/CameraRenderBridge.java').getText('UTF-8')
+        if(!render.contains('if (!config.config().playbackCollision)')||!render.contains('collisionResolver.resolvePlayback('))throw new GradleException('Playback collision OFF/ON routing is incomplete')
+    }
+}
+
+tasks.named('test') {
+    failOnNoDiscoveredTests = false
+}
+
+tasks.named('check') {
+    dependsOn tasks.named('verifyPhase1Safety')
+    dependsOn tasks.named('verifyMotionConsistency')
+    dependsOn tasks.named('verifyOrbitCamera')
+    dependsOn tasks.named('verifyCameraUx')
+    dependsOn tasks.named('verifyTripodCamera')
+    dependsOn tasks.named('verifyCinematicMotion')
+    dependsOn tasks.named('verifyCameraRollZoom')
+    dependsOn tasks.named('verifyMinecraft261RenderPipeline')
+    dependsOn tasks.named('verifyCameraRadialMenu')
+    dependsOn tasks.named('verifyCameraCollision')
+    dependsOn tasks.named('verifyFreeCameraConfig')
+    dependsOn tasks.named('verifyStudioSystems')
+    dependsOn tasks.named('verifyStorageOperations')
+    dependsOn tasks.named('verifyCompletionRequirements')
+    dependsOn tasks.named('verifyFollowCamera')
+    dependsOn tasks.named('verifyRuntimeHotfixes')
+}

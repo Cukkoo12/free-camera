@@ -1,0 +1,15 @@
+modLoader="javafml"
+loaderVersion="[62,)"
+license="MIT"
+
+[[mods]]
+modId="freecamera"
+version="${version}"
+displayName="Free Camera"
+description="Take full control of your camera: freecam, orbit, tripod lock, cinematic mode, roll, zoom, and more."
+authors="Cukkoo"
+logoFile=""
+environment="CLIENT"
+
+[[mixins]]
+config="freecamera.mixins.json"

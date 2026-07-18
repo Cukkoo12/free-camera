@@ -1,0 +1,27 @@
+{
+    "required": true,
+    "package": "com.cukkoo.freecamera.mixin",
+    "compatibilityLevel": "JAVA_25",
+    "client": [
+        "CameraMixin",
+        "CameraProjectionAccessor",
+        "CameraRenderEffectsMixin",
+        "ChunkRenderViewMixin",
+        "ClientLevelCollisionInvalidationMixin",
+        "ClientInputAccessor",
+        "CrosshairRenderingMixin",
+        "CompleteHudRenderingMixin",
+        "FrustumAccessor",
+        "HandRenderingMixin",
+        "HurtCameraRenderingMixin",
+        "KeyboardInputMixin",
+        "KeyboardRadialMenuMixin",
+        "MouseHandlerMixin",
+        "RadialGameplayInputMixin",
+        "ViewBobbingMixin",
+        "WorldRenderViewMixin"
+    ],
+    "injectors": {
+        "defaultRequire": 1
+    }
+}
