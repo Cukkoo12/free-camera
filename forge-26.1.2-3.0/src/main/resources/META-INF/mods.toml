@@ -1,0 +1,26 @@
+modLoader="javafml"
+loaderVersion="[64,)"
+license="MIT"
+clientSideOnly=true
+
+[[mods]]
+modId="freecamera"
+version="${version}"
+displayName="Free Camera"
+displayURL="https://github.com/Cukkoo12/free-camera"
+authors="Cukkoo"
+description='''A client-side camera mod with Free, Orbit, Tripod, Follow, recording, and path tools.'''
+
+[[dependencies.freecamera]]
+modId="forge"
+mandatory=true
+versionRange="[64.0.12,65)"
+ordering="NONE"
+side="CLIENT"
+
+[[dependencies.freecamera]]
+modId="minecraft"
+mandatory=true
+versionRange="[26.1.2]"
+ordering="NONE"
+side="CLIENT"

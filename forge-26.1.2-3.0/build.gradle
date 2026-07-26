@@ -1,0 +1,96 @@
+plugins {
+    id 'java'
+    id 'maven-publish'
+    id 'net.minecraftforge.gradle' version '[7.0.17,8)'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(25)
+    withSourcesJar()
+}
+
+minecraft {
+    runs {
+        configureEach {
+            workingDir = layout.projectDirectory.dir('run')
+            systemProperty 'eventbus.api.strictRuntimeChecks', 'true'
+            systemProperty 'forge.enabledGameTestNamespaces', project.mod_id
+        }
+        register('client')
+    }
+}
+
+repositories {
+    minecraft.mavenizer(it)
+    maven fg.forgeMaven
+    maven fg.minecraftLibsMaven
+    mavenCentral()
+}
+
+dependencies {
+    implementation minecraft.dependency("net.minecraftforge:forge:${project.minecraft_version}-${project.forge_version}")
+    annotationProcessor 'net.minecraftforge:eventbus-validator:7.0.1'
+    testImplementation 'org.ow2.asm:asm-tree:9.9.1'
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filteringCharset = 'UTF-8'
+    filesMatching('META-INF/mods.toml') {
+        expand 'version': project.version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 25
+}
+
+jar {
+    from('LICENSE') {
+        rename { "${it}_${project.archives_base_name}" }
+    }
+    manifest {
+        attributes 'MixinConfigs': 'free-camera.mixins.json'
+    }
+}
+
+def developmentChecks = [
+        verifyMotionConsistency: 'com.cukkoo.freecamera.motion.CameraMotionIntegratorDevelopmentChecks',
+        verifyOrbitCamera: 'com.cukkoo.freecamera.orbit.OrbitCameraDevelopmentChecks',
+        verifyCameraUx: 'com.cukkoo.freecamera.state.CameraUxDevelopmentChecks',
+        verifyTripodCamera: 'com.cukkoo.freecamera.tripod.TripodCameraDevelopmentChecks',
+        verifyCinematicMotion: 'com.cukkoo.freecamera.cinematic.CinematicMotionDevelopmentChecks',
+        verifyCameraRollZoom: 'com.cukkoo.freecamera.render.CameraRollZoomDevelopmentChecks',
+        verifyMinecraftRenderPipeline: 'com.cukkoo.freecamera.render.Minecraft261RenderPipelineDevelopmentChecks',
+        verifyCameraRadialMenu: 'com.cukkoo.freecamera.radial.CameraRadialMenuDevelopmentChecks',
+        verifyCameraCollision: 'com.cukkoo.freecamera.collision.CameraCollisionDevelopmentChecks',
+        verifyFreeCameraConfig: 'com.cukkoo.freecamera.config.FreeCameraConfigDevelopmentChecks',
+        verifyStudioSystems: 'com.cukkoo.freecamera.recording.StudioDevelopmentChecks',
+        verifyStorageOperations: 'com.cukkoo.freecamera.recording.StorageDevelopmentChecks',
+        verifyFollowCamera: 'com.cukkoo.freecamera.follow.FollowDevelopmentChecks',
+        verifyRuntimeHotfixes: 'com.cukkoo.freecamera.follow.RuntimeHotfixDevelopmentChecks'
+]
+
+developmentChecks.each { taskName, mainName ->
+    tasks.register(taskName, JavaExec) {
+        dependsOn tasks.named('testClasses')
+        classpath = sourceSets.test.runtimeClasspath
+        mainClass = mainName
+    }
+}
+
+tasks.named('test') {
+    failOnNoDiscoveredTests = false
+}
+
+tasks.named('check') {
+    dependsOn developmentChecks.keySet()
+}

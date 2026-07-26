@@ -1,0 +1,93 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+    id 'net.neoforged.moddev' version '2.0.142'
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+    archivesName = project.archives_base_name
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(25)
+    withSourcesJar()
+}
+
+neoForge {
+    version = project.neo_version
+    addModdingDependenciesTo sourceSets.test
+    runs {
+        client { client() }
+    }
+    mods {
+        freecamera {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation 'org.ow2.asm:asm-tree:9.9.1'
+}
+
+processResources {
+    inputs.properties version: project.version, neo_version: project.neo_version
+    filteringCharset = 'UTF-8'
+    filesMatching('META-INF/neoforge.mods.toml') {
+        expand version: project.version, neo_version: project.neo_version
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 25
+}
+
+jar {
+    from('LICENSE') {
+        rename { "${it}_${project.archives_base_name}" }
+    }
+    manifest {
+        attributes 'MixinConfigs': 'free-camera.mixins.json'
+    }
+}
+
+def developmentChecks = [
+        verifyMotionConsistency: 'com.cukkoo.freecamera.motion.CameraMotionIntegratorDevelopmentChecks',
+        verifyOrbitCamera: 'com.cukkoo.freecamera.orbit.OrbitCameraDevelopmentChecks',
+        verifyCameraUx: 'com.cukkoo.freecamera.state.CameraUxDevelopmentChecks',
+        verifyTripodCamera: 'com.cukkoo.freecamera.tripod.TripodCameraDevelopmentChecks',
+        verifyCinematicMotion: 'com.cukkoo.freecamera.cinematic.CinematicMotionDevelopmentChecks',
+        verifyCameraRollZoom: 'com.cukkoo.freecamera.render.CameraRollZoomDevelopmentChecks',
+        verifyMinecraftRenderPipeline: 'com.cukkoo.freecamera.render.Minecraft262RenderPipelineDevelopmentChecks',
+        verifyCameraRadialMenu: 'com.cukkoo.freecamera.radial.CameraRadialMenuDevelopmentChecks',
+        verifyCameraCollision: 'com.cukkoo.freecamera.collision.CameraCollisionDevelopmentChecks',
+        verifyFreeCameraConfig: 'com.cukkoo.freecamera.config.FreeCameraConfigDevelopmentChecks',
+        verifyStudioSystems: 'com.cukkoo.freecamera.recording.StudioDevelopmentChecks',
+        verifyStorageOperations: 'com.cukkoo.freecamera.recording.StorageDevelopmentChecks',
+        verifyFollowCamera: 'com.cukkoo.freecamera.follow.FollowDevelopmentChecks',
+        verifyRuntimeHotfixes: 'com.cukkoo.freecamera.follow.RuntimeHotfixDevelopmentChecks'
+]
+
+developmentChecks.each { taskName, mainName ->
+    tasks.register(taskName, JavaExec) {
+        dependsOn tasks.named('testClasses')
+        classpath = sourceSets.test.runtimeClasspath
+        mainClass = mainName
+    }
+}
+
+tasks.named('test') {
+    failOnNoDiscoveredTests = false
+}
+
+tasks.named('check') {
+    dependsOn developmentChecks.keySet()
+}
