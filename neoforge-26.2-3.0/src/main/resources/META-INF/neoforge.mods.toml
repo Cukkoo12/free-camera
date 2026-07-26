@@ -1,0 +1,28 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="MIT"
+
+[[mods]]
+modId="freecamera"
+version="${version}"
+displayName="Free Camera"
+displayURL="https://github.com/Cukkoo12/free-camera"
+authors="Cukkoo"
+description='''A client-side camera mod with Free, Orbit, Tripod, Follow, recording, and path tools.'''
+
+[[mixins]]
+config="free-camera.mixins.json"
+
+[[dependencies.freecamera]]
+modId="neoforge"
+type="required"
+versionRange="[${neo_version},)"
+ordering="NONE"
+side="CLIENT"
+
+[[dependencies.freecamera]]
+modId="minecraft"
+type="required"
+versionRange="[26.2]"
+ordering="NONE"
+side="CLIENT"
