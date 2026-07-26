@@ -23,7 +23,14 @@ minecraft {
             systemProperty 'eventbus.api.strictRuntimeChecks', 'true'
             systemProperty 'forge.enabledGameTestNamespaces', project.mod_id
         }
-        register('client')
+        register('client') {
+            args '--mixin', 'free-camera.mixins.json'
+            mods {
+                freecamera {
+                    source sourceSets.main
+                }
+            }
+        }
     }
 }
 
@@ -48,9 +55,17 @@ processResources {
     }
 }
 
+// ForgeGradle 7 scans each development output as a separate mod root.
+// Merge processed resources with compiled classes so one complete mod is discovered.
+sourceSets.main.output.resourcesDir = layout.buildDirectory.dir('classes/java/main').get().asFile
+
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.release = 25
+}
+
+tasks.named('compileJava') {
+    dependsOn tasks.named('processResources')
 }
 
 jar {

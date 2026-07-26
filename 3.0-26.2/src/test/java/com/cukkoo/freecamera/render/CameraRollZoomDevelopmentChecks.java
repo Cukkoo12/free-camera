@@ -263,17 +263,6 @@ public final class CameraRollZoomDevelopmentChecks {
         requireClose(renderState.projectionMatrix.m11(), 3.0, "zoom projection m11");
         requireClose(renderState.projectionMatrix.m22(), 1.0, "zoom altered projection depth");
 
-        Matrix4f finalViewProjection = new Matrix4f();
-        CameraOrientationBridge.composeFinalViewProjection(
-                renderState.projectionMatrix,
-                renderState.viewRotationMatrix,
-                finalViewProjection
-        );
-        Matrix4f expectedViewProjection = new Matrix4f(renderState.projectionMatrix)
-                .mul(renderState.viewRotationMatrix);
-        requireMatrixClose(finalViewProjection, expectedViewProjection,
-                "frustum did not use final rolled and zoomed matrices");
-
         CameraRenderState nextFrame = new CameraRenderState();
         nextFrame.viewRotationMatrix.identity();
         nextFrame.projectionMatrix.identity();

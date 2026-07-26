@@ -12,7 +12,6 @@
         "ClientInputAccessor",
         "CrosshairRenderingMixin",
         "CompleteHudRenderingMixin",
-        "FrustumAccessor",
         "HandRenderingMixin",
         "HurtCameraRenderingMixin",
         "HudOverlayBridgeMixin",

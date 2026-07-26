@@ -23,7 +23,14 @@ minecraft {
             systemProperty 'eventbus.api.strictRuntimeChecks', 'true'
             systemProperty 'forge.enabledGameTestNamespaces', project.mod_id
         }
-        register('client')
+        register('client') {
+            args '--mixin', 'free-camera.mixins.json'
+            mods {
+                freecamera {
+                    source sourceSets.main
+                }
+            }
+        }
     }
 }
 
@@ -48,9 +55,55 @@ processResources {
     }
 }
 
+// ForgeGradle 7 scans each development output as a separate mod root.
+// Merge processed resources with compiled classes so one complete mod is discovered.
+sourceSets.main.output.resourcesDir = layout.buildDirectory.dir('classes/java/main').get().asFile
+
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.release = 25
+}
+
+tasks.named('compileJava') {
+    dependsOn tasks.named('processResources')
+}
+
+tasks.register('repairForgeClientExtra') {
+    doLast {
+        File clientJar = new File(
+                gradle.gradleUserHomeDir,
+                "caches/minecraftforge/forgegradle/mavenizer/caches/minecraft_tasks/${project.minecraft_version}/client.jar"
+        )
+        File clientExtraRoot = file(
+                ".gradle/mavenizer/repo/net/minecraft/client-extra"
+        )
+        File clientExtraJar = fileTree(clientExtraRoot) {
+            include '**/client-extra-*.jar'
+        }.singleFile
+
+        if (!clientJar.isFile()) {
+            throw new GradleException("Missing vanilla client JAR: ${clientJar}")
+        }
+
+        boolean hasDefaultLanguage
+        new java.util.zip.ZipFile(clientExtraJar).withCloseable { archive ->
+            hasDefaultLanguage = archive.getEntry('assets/minecraft/lang/en_us.json') != null
+        }
+        if (hasDefaultLanguage) {
+            return
+        }
+
+        logger.lifecycle('Repairing incomplete Forge 26.2 client-extra resources')
+        ant.zip(destfile: clientExtraJar, update: true, keepcompression: true) {
+            zipfileset(src: clientJar) {
+                exclude(name: '**/*.class')
+            }
+        }
+    }
+}
+
+tasks.matching { it.name == 'runClient' }.configureEach {
+    dependsOn tasks.named('repairForgeClientExtra')
 }
 
 jar {

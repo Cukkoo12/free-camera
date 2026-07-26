@@ -87,11 +87,12 @@ public final class CameraRenderEffectsBridge {
                 orientationBridge,
                 projectionBridge
         );
-        orientationBridge.updateFrustum(
-                cameraAccessor.freecamera$cullFrustum(),
-                canonicalWorldView.projection(),
-                canonicalWorldView.view()
-        );
+        // Minecraft 26.2 builds its culling frustum from a dedicated culling
+        // projection before it installs the render projection. Replacing the
+        // frustum internals here with the render projection can leave its view
+        // vector unable to converge in offsetToFullyIncludeCameraCube, freezing
+        // the render thread as soon as free camera is enabled. The vanilla
+        // frustum already contains the detached camera position and rotation.
     }
 
     public void applyProjection(CameraRenderState cameraState) {

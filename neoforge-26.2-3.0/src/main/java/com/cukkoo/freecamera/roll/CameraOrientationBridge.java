@@ -1,9 +1,6 @@
 package com.cukkoo.freecamera.roll;
 
-import com.cukkoo.freecamera.mixin.FrustumAccessor;
-import net.minecraft.client.renderer.culling.Frustum;
 import org.joml.Matrix4f;
-import org.joml.Matrix4fc;
 
 public final class CameraOrientationBridge {
     private double screenRightX;
@@ -50,29 +47,6 @@ public final class CameraOrientationBridge {
         screenUpX = upX * cosRoll - rightX * sinRoll;
         screenUpY = upY * cosRoll - rightY * sinRoll;
         screenUpZ = upZ * cosRoll - rightZ * sinRoll;
-    }
-
-    public void updateFrustum(Frustum frustum, Matrix4fc projection, Matrix4fc worldView) {
-        if (frustum == null) {
-            return;
-        }
-        FrustumAccessor accessor = (FrustumAccessor) frustum;
-        composeFinalViewProjection(
-                projection,
-                worldView,
-                accessor.freecamera$matrix()
-        );
-        accessor.freecamera$intersection().set(accessor.freecamera$matrix());
-        accessor.freecamera$viewVector().set(0.0F, 0.0F, 1.0F, 0.0F);
-        accessor.freecamera$matrix().transformTranspose(accessor.freecamera$viewVector());
-    }
-
-    public static Matrix4f composeFinalViewProjection(
-            Matrix4fc projection,
-            Matrix4fc view,
-            Matrix4f destination
-    ) {
-        return projection.mul(view, destination);
     }
 
     public double screenRightX() { return screenRightX; }

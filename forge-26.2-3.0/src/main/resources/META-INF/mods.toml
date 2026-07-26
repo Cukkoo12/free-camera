@@ -11,6 +11,9 @@ displayURL="https://github.com/Cukkoo12/free-camera"
 authors="Cukkoo"
 description='''A client-side camera mod with Free, Orbit, Tripod, Follow, recording, and path tools.'''
 
+[[mixins]]
+config="free-camera.mixins.json"
+
 [[dependencies.freecamera]]
 modId="forge"
 mandatory=true

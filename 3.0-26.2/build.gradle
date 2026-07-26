@@ -342,7 +342,7 @@ tasks.register('verifyPhase1Safety') {
                 || chunkRenderViewMixin.contains('rotateZ(')) {
             throw new GradleException('Chunk UBO snapshots must receive the canonical view at prepareChunkRenders')
         }
-        if (!mixinConfig.contains('"FrustumAccessor"')
+        if (mixinConfig.contains('"FrustumAccessor"')
                 || !mixinConfig.contains('"CameraProjectionAccessor"')
                 || !mixinConfig.contains('"ChunkRenderViewMixin"')
                 || !mixinConfig.contains('"WorldRenderViewMixin"')
@@ -375,18 +375,16 @@ tasks.register('verifyPhase1Safety') {
         ).getText('UTF-8')
         if (!orientationBridge.contains('worldView.rotateLocalZ(')
                 || orientationBridge.contains('orientation.rotate')
-                || !orientationBridge.contains('updateFrustum(')
-                || !orientationBridge.contains('composeFinalViewProjection(')
                 || !projectionBridge.contains('projectionMatrix.m00(')
                 || !projectionBridge.contains('projectionMatrix.m11(')) {
             throw new GradleException('Roll/zoom must affect only the shared world view and world projection')
         }
         if (!renderEffectsBridge.contains('canonicalWorldView.prepare(')
-                || !renderEffectsBridge.contains('cameraAccessor.freecamera$cullFrustum()')
-                || renderEffectsBridge.count('orientationBridge.updateFrustum(') != 1
+                || renderEffectsBridge.contains('freecamera$cullFrustum()')
+                || renderEffectsBridge.contains('orientationBridge.updateFrustum(')
                 || renderEffectsBridge.count('selectCanonicalWorldView(') != 1
                 || renderEffectsBridge.contains('hudProjection')) {
-            throw new GradleException('Canonical view preparation and final frustum rebuild are incomplete')
+            throw new GradleException('Canonical view preparation must preserve Minecraft 26.x dedicated culling frustum')
         }
         if (canonicalWorldView.count('new Matrix4f()') != 2
                 || canonicalWorldView.count('orientationBridge.applyWorldView(') != 1
